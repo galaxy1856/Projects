@@ -1,0 +1,103 @@
+create database DEMO;
+create schema demo_03012024;
+
+CREATE or  REPLACE STORAGE INTEGRATION aws_s3_integration
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = 'S3'
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::381492248559:role/demo_03012024'
+  STORAGE_ALLOWED_LOCATIONS = ('s3://demo-03012024/');
+  
+show integrations;
+
+desc INTEGRATION aws_s3_integration;
+
+GRANT USAGE ON INTEGRATION aws_s3_integration TO ROLE accountadmin;
+
+create or replace file format demo_format
+TYPE = 'CSV' 
+FIELD_DELIMITER = '|' 
+SKIP_HEADER = 1;
+
+CREATE or REPLACE STAGE my_s3_stage
+  STORAGE_INTEGRATION = aws_s3_integration
+  URL = 's3://demo-03012024/'
+  FILE_FORMAT = demo_format;
+
+  list @my_s3_stage;
+
+  remove @my_s3_stage/contacts1.csv;
+
+
+create or replace table contacts_csv
+(
+ID integer,
+Last_Name String,
+First_Name String,
+Company String,
+Email String,
+Workplace String,
+Cellphone String,
+String_Address String,
+City String,
+Postalcode integer
+);
+
+select * from contacts_csv;
+
+COPY INTO contacts_csv
+from @my_s3_stage/contacts1.csv
+file_format=(format_name=demo_format);
+
+
+select * from contacts_csv;
+
+
+
+-- scenario :1
+COPY INTO contacts_csv
+from @my_s3_stage/
+file_format=(format_name=demo_format)
+on_error='skip_file'; -- skip the whole file
+
+COPY INTO contacts_csv
+from @my_s3_stage/
+file_format=(format_name=demo_format)
+on_error='Continue'; -- skip only the bad records and load rest of the record.
+
+COPY INTO contacts_csv
+from @my_s3_stage/
+file_format=(format_name=demo_format)
+on_error='abort'; -- stope loading data when first error occured.
+
+-- scenario:2
+
+-- We have already uploaded data from our same stage file if we try to load again it will not upload duplicatesame file data.
+-- "COPY" command have feature it will save his data in memory and it will check if same file will uloaded then it will not upload. "COPY" command maintain history for certain time. But due to business requirement we need to upload same file then we can use Force=true. I will not check memory.
+
+COPY INTO contacts_csv
+from @my_s3_stage/contacts1.csv
+file_format=(format_name=demo_format);
+-- But due to business requirement we need to upload same file then we can use Force=true. I will not check memory.
+
+COPY INTO contacts_csv
+from @my_s3_stage/contacts1.csv
+file_format=(format_name=demo_format)
+force=true;
+
+select * from contacts_csv;
+
+list @my_s3_stage/contacts1.csv;
+
+select count(*) from contacts_csv;
+
+-- scenario :3
+
+-- After succesfully uploading the file we want to remove the that file then we can leverage below feature.
+COPY INTO contacts_csv
+from @my_s3_stage/contacts1.csv
+file_format=(format_name=demo_format)
+force=true
+purge=true;
+
+list @my_s3_stage/contacts1.csv;
